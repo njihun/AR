@@ -72,9 +72,9 @@
 
     // ─────────────────────────────
     // PDR(걸음수 감지 + 자이로 방향) 적용
-    const STEP_THRESHOLD    = 1.2;    // 가속도 피크 임계값 (m/s²)
+    const STEP_THRESHOLD    = 0.3;    // 가속도 피크 임계값 (m/s²)
     const MIN_STEP_INTERVAL = 300;    // ms
-    const STEP_LENGTH       = 0.7;    // m, 보폭
+    const STEP_LENGTH       = 0.5;    // m, 보폭
     let lastY       = 0;
     let lastStepTs  = 0;
 
