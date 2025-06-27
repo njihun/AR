@@ -2,84 +2,114 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>Geo-AR: 나침반 헤딩만 반영</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- A-Frame & AR.js -->
-  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.js"></script>
-  <!-- Geo-AR 컴포넌트 -->
-  <script src="https://unpkg.com/aframe-gps-camera-component/dist/aframe-gps-camera-component.min.js"></script>
-  <script src="https://unpkg.com/aframe-gps-entity-place-component/dist/aframe-gps-entity-place-component.min.js"></script>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>웹 AR : 고정된 큐브</title>
   <style>
-    body, html { margin: 0; overflow: hidden; height: 100%; }
+    body { margin: 0; overflow: hidden; }
+    #info {
+      position: absolute; top: 10px; left: 10px; 
+      background: rgba(255,255,255,0.7); padding: 8px;
+      font-family: sans-serif; font-size: 14px;
+    }
   </style>
 </head>
 <body>
-  <a-scene
-    embedded
-    vr-mode-ui="enabled: false"
-    renderer="logarithmicDepthBuffer: true"
-    arjs="sourceType: webcam; trackingMethod: gps; debugUIEnabled: false;"
-  >
-    <!-- GPS + 나침반 헤딩만 반영 카메라 -->
-    <a-entity gps-camera compass-reader></a-entity>
-  </a-scene>
+  <div id="info">위치·자세 센서 사용을 허용해주세요</div>
 
-  <script>
-    // 1) compass-reader 컴포넌트: 오직 alpha(헤딩)만 반영
-    AFRAME.registerComponent('compass-reader', {
-      init: function () {
-        // Android 13+ 등 절대 방향 지원이 있으면 우선 사용
-        const evtName = ('ondeviceorientationabsolute' in window)
-          ? 'deviceorientationabsolute'
-          : 'deviceorientation';
-        window.addEventListener(evtName, this.onOrientation.bind(this), true);
-      },
-      onOrientation: function (evt) {
-        // evt.alpha: 0~360°, 북을 기준으로 시계방향 증가
-        let alpha = evt.alpha;
-        // iOS Safari 폴백: 웹킷 나침반 헤딩이 있으면 사용
-        if (alpha == null && typeof evt.webkitCompassHeading === 'number') {
-          alpha = evt.webkitCompassHeading;
-        }
-        if (alpha == null) return;
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.151.3/build/three.module.js';
+    import { DeviceOrientationControls } from 'https://cdn.jsdelivr.net/npm/three@0.151.3/examples/jsm/controls/DeviceOrientationControls.js';
 
-        // Three.js 좌표계에 맞춰 보정:
-        // 브라우저 alpha(0° 북동·시계방향) → Y축 회전(반시계방향)
-        // 따라서 360 - alpha
-        const heading = 360 - alpha;
-        this.el.object3D.rotation.set(0, THREE.Math.degToRad(heading), 0);
+    // 1) 고정하고 싶은 실제 세계 위도·경도 (예시: 서울시청)
+    const targetLat = 37.5665;
+    const targetLon = 126.9780;
+
+    // 사용자 현재 위치
+    let userLat = 0, userLon = 0;
+
+    // Three.js 기본 세팅
+    const scene    = new THREE.Scene();
+    const camera   = new THREE.PerspectiveCamera( 60, window.innerWidth/window.innerHeight, 0.1, 10000 );
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    document.body.appendChild( renderer.domElement );
+
+    // 안내 문구
+    const info = document.getElementById('info');
+
+    // 큐브 생성
+    const geo  = new THREE.BoxGeometry( 1, 1, 1 );
+    const mat  = new THREE.MeshNormalMaterial();
+    const cube = new THREE.Mesh( geo, mat );
+    scene.add( cube );
+
+    // DeviceOrientationControls (카메라를 폰 자세에 맞춤)
+    const controls = new DeviceOrientationControls( camera );
+    controls.connect();
+
+    // 초기 카메라 위치: 사용자 위치(0,0,0)
+    camera.position.set( 0, 0, 0 );
+
+    // GPS 업데이트
+    if ( 'geolocation' in navigator ) {
+      navigator.geolocation.watchPosition( pos => {
+        userLat = pos.coords.latitude;
+        userLon = pos.coords.longitude;
+        updateCubePosition();
+        info.style.display = 'none';
+      }, err => {
+        info.textContent = '위치 정보를 가져올 수 없습니다.';
+        console.error(err);
+      }, { enableHighAccuracy: true, maximumAge:1000, timeout:5000 } );
+    } else {
+      info.textContent = '이 브라우저는 Geolocation을 지원하지 않습니다.';
+    }
+
+    // 위도·경도 차이를 미터 단위 XYZ로 변환
+    function computeOffset() {
+      const R = 6378137; // 지구 반지름 (m)
+      const dLat = THREE.MathUtils.degToRad( targetLat - userLat );
+      const dLon = THREE.MathUtils.degToRad( targetLon - userLon );
+      const latRad = THREE.MathUtils.degToRad( userLat );
+
+      // 동서(X), 남북(Z) 축 변환
+      const x = R * dLon * Math.cos( latRad );
+      const z = -R * dLat;
+      return { x, z };
+    }
+
+    // 큐브 위치 갱신
+    function updateCubePosition() {
+      const { x, z } = computeOffset();
+      cube.position.set( x, 0, z );
+    }
+
+    // 리사이즈 대응
+    window.addEventListener( 'resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize( window.innerWidth, window.innerHeight );
+    });
+
+    // 애니메이션 루프
+    function animate() {
+      requestAnimationFrame( animate );
+      controls.update();
+      renderer.render( scene, camera );
+    }
+    animate();
+
+    // iOS 권한 요청 (iOS13+)
+    window.addEventListener('click', () => {
+      if ( typeof DeviceOrientationEvent !== 'undefined'
+           && typeof DeviceOrientationEvent.requestPermission === 'function' ) {
+        DeviceOrientationEvent.requestPermission()
+          .then( res => {
+            if ( res === 'granted' ) controls.connect();
+          })
+          .catch( console.error );
       }
-    });
-
-    // 2) GPS로 현재 위치 가져와 ±5m 이내 랜덤 좌표에 큐브 배치
-    navigator.geolocation.getCurrentPosition(pos => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
-
-      const meterToDeg = m => m / 111111;  // 위도 1° ≈ 111.111km
-      const d = 5; // 최대 5m 오프셋
-      const offLat = (Math.random() - 0.5) * meterToDeg(d);
-      const offLon = (Math.random() - 0.5) * (meterToDeg(d) / Math.cos(lat * Math.PI/180));
-
-      const targetLat = lat + offLat;
-      const targetLon = lon + offLon;
-
-      // 고정 큐브(A-Frame box) 생성
-      const box = document.createElement('a-box');
-      box.setAttribute('gps-entity-place', 
-        `latitude: ${targetLat.toFixed(6)}; longitude: ${targetLon.toFixed(6)};`
-      );
-      box.setAttribute('scale', '3 3 3');
-      box.setAttribute('color', 'cyan');
-      // 부드러운 회전 애니메이션
-      box.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 8000');
-      document.querySelector('a-scene').appendChild(box);
-    }, () => {
-      alert('위치 권한이 필요합니다');
-    });
+    }, { once: true });
   </script>
 </body>
 </html>
