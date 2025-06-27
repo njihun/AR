@@ -1,64 +1,93 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8">  
   <title>Geo-AR: 요(자이로)만 반영</title>
+  <!-- 모바일 화면 대응 설정 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- A-Frame + AR.js -->
+
+  <!-- A-Frame 프레임워크 로드 -->
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+  <!-- AR.js for A-Frame (웹캠 + GPS 트래킹 지원) -->
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.js"></script>
-  <!-- Geo-AR 컴포넌트 -->
+  <!-- Geo-AR: 위치 기반 카메라 컴포넌트 -->
   <script src="https://unpkg.com/aframe-gps-camera-component/dist/aframe-gps-camera-component.min.js"></script>
+  <!-- Geo-AR: 절대 좌표 엔티티 배치 컴포넌트 -->
   <script src="https://unpkg.com/aframe-gps-entity-place-component/dist/aframe-gps-entity-place-component.min.js"></script>
 
   <style>
+    /* 페이지 여백 제거, 스크롤 숨기기, 전체 높이 사용 */
     body, html { margin:0; overflow:hidden; height:100%; }
   </style>
 </head>
 <body>
+  <!-- A-Frame 씬 선언: embedded(내장), WebXR UI 끔, 로그 뎁스 버퍼 활성화 -->
+  <!-- arjs 속성: 웹캠 소스, GPS 기반 추적, 디버그 UI 비활성 -->
   <a-scene
     embedded
     vr-mode-ui="enabled:false"
     renderer="logarithmicDepthBuffer:true"
     arjs="sourceType: webcam; trackingMethod: gps; debugUIEnabled: false;"
   >
-    <!-- GPS + 나침반(요)만 반영 카메라 -->
+    <!-- ① GPS + 나침반 Y축(요)만 반영하는 카메라 엔티티 -->
     <a-entity gps-camera compass-reader></a-entity>
   </a-scene>
 
   <script>
-    // 1) alpha(0~360)만 읽어서 카메라 Y축(수평 회전)에 적용
+    // --- 1) compass-reader 컴포넌트 등록 ---
     AFRAME.registerComponent('compass-reader', {
       init: function () {
+        // 디바이스 방향 이벤트(deviceorientation) 수신
         window.addEventListener('deviceorientation', this.onOrientation.bind(this));
       },
       onOrientation: function (evt) {
-        if (evt.alpha == null) return;
-        // Three.js world: Y축 회전에 -alpha 적용 (나침반과 맞추기)
+        // evt.alpha: 기기의 나침반(방위각) 값(0~360)
+        if (evt.alpha == null) return;  // alpha 값 없으면 무시
+
+        // this.el.object3D는 A-Frame 엔티티의 Three.js 객체
+        // Three.js는 라디안 단위 사용 → degToRad 변환
+        // Y축(수평 회전)에 -alpha 적용 → 실제 나침반 방향과 일치시키기 위함
         this.el.object3D.rotation.y = - THREE.Math.degToRad(evt.alpha);
       }
     });
 
-    // 2) GPS로 현재 위치 받아서, ±5m 이내 랜덤 좌표에 큐브 배치
+    // --- 2) GPS로 현재 위치 가져와서 랜덤 오프셋 좌표 계산 후 큐브 배치 ---
     navigator.geolocation.getCurrentPosition(pos => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
-      const toDeg = m => m/111111;
-      const d = 5; // 미터
-      const offLat = (Math.random()-0.5)*toDeg(d);
-      const offLon = (Math.random()-0.5)*(toDeg(d)/Math.cos(lat*Math.PI/180));
-      const targetLat = lat+offLat, targetLon = lon+offLon;
+      const lat = pos.coords.latitude;    // 현재 위도
+      const lon = pos.coords.longitude;   // 현재 경도
 
-      // 고정 큐브 생성
+      // 위/경도 1도 ≈ 111,111m 이므로, 미터→도 변환 함수
+      const toDeg = m => m / 111111;
+
+      const d = 5; // 최대 5m 이내 오프셋
+      // 위도 오프셋: [-5m, +5m]
+      const offLat = (Math.random() - 0.5) * toDeg(d);
+      // 경도 오프셋: [-5m, +5m] (위도에 따라 cos 보정)
+      const offLon = (Math.random() - 0.5) * (toDeg(d) / Math.cos(lat * Math.PI/180));
+
+      // 목표 좌표 = 현재좌표 + 오프셋
+      const targetLat = lat + offLat;
+      const targetLon = lon + offLon;
+
+      // A-Frame 박스(a-box) 엔티티 생성
       const box = document.createElement('a-box');
+      // gps-entity-place 속성: 절대 위도·경도로 고정
       box.setAttribute('gps-entity-place',
         `latitude: ${targetLat}; longitude: ${targetLon};`
       );
+      // 크기 조정 (3m³)
       box.setAttribute('scale','3 3 3');
+      // 색상 지정
       box.setAttribute('color','cyan');
+      // 회전 애니메이션: Y축 0→360°, 반복, 8초 주기
       box.setAttribute('animation','property: rotation; to: 0 360 0; loop: true; dur: 8000');
+      // 씬에 추가
       document.querySelector('a-scene').appendChild(box);
-    }, _=> alert('위치 권한이 필요합니다'));
+
+    }, _=> {
+      // 위치 권한 거부 시 알림
+      alert('위치 권한이 필요합니다');
+    });
   </script>
 </body>
 </html>
