@@ -86,8 +86,10 @@
         position => {
           const { latitude, longitude, altitude, accuracy } = position.coords;
           if (startLongitude == null) {
-            [ startLatitude, startLongitude, startAltitude ] = position.coords;
-            console.log([ startLatitude, startLongitude, startAltitude ]);
+            startLatitude = latitude;
+            startLongitude = longitude;
+            startAltitude = altitude;
+            console.log([ startLatitude, startLongitude, startAltitude ])
           }
           let temp = [latitude, longitude, altitude].map((e) => { return String(e * 10000).trunc() });
           console.log(
