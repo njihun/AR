@@ -73,28 +73,43 @@
     // ─────────────────────────────
     // PDR(걸음수 감지 + 자이로 방향) 적용
     const STEP_THRESHOLD    = 0.5;    // 가속도 피크 임계값 (m/s²)
-    const MIN_STEP_INTERVAL = 300;    // ms
+    const MIN_STEP_INTERVAL = 100;    // ms
     const STEP_LENGTH       = 0.5;    // m, 보폭
     let lastY       = 0;
     let lastStepTs  = 0;
 
-    window.addEventListener('devicemotion', ev => {
-      const ag = ev.accelerationIncludingGravity;
-      if (!ag) return;
+    // (기존에 선언해 둔) 전진 로컬 벡터
+    const forwardLocal = new THREE.Vector3(0, 0, -1);
 
+    window.addEventListener('devicemotion', ev => {
       const now = ev.timeStamp;
-      const y   = ag.y;
-      if (y - lastY > STEP_THRESHOLD && (now - lastStepTs) > MIN_STEP_INTERVAL) {
+      // 중력 제외 가속도가 있으면 그걸, 없으면 포함 가속도 사용
+      const acc = ev.acceleration || ev.accelerationIncludingGravity;
+      if (!acc) return;
+
+      // 1) 센서 가속도(기기 로컬) → 월드 좌표로 변환
+      const accWorld = new THREE.Vector3(acc.x, acc.y, acc.z)
+        .applyQuaternion(quaternion);
+
+      // 2) 전방 월드 벡터 계산
+      const forwardWorld = forwardLocal
+        .clone()
+        .applyQuaternion(quaternion)
+        .normalize();
+
+      // 3) 가속도 벡터를 전방 벡터에 투영한 값(스칼라)
+      const proj = accWorld.dot(forwardWorld);
+
+      // 4) 임계치 검사 후, proj의 부호(+)면 전진, (–)면 후진
+      if (Math.abs(proj) > STEP_THRESHOLD && (now - lastStepTs) > MIN_STEP_INTERVAL) {
         lastStepTs = now;
-        // 카메라 전방 벡터 계산
-        const forward = new THREE.Vector3(0, 0, -1)
-                             .applyQuaternion(quaternion)
-                             .normalize();
-        // 보폭만큼 전진
-        camera.position.addScaledVector(forward, STEP_LENGTH);
+        camera.position.addScaledVector(
+          forwardWorld,
+          STEP_LENGTH * Math.sign(proj)
+        );
       }
-      lastY = y;
     });
+
     // ─────────────────────────────
 
     // Geolocation API (원본 그대로)
@@ -109,16 +124,13 @@
             startLatitude  = latitude;
             startLongitude = longitude;
             startAltitude  = altitude;
-            console.log([ startLatitude, startLongitude, startAltitude ]);
           }
-          let temp = [latitude, longitude, altitude]
-                     .map(e => (e * 100).toFixed(1));
-          console.log(
-            `위도: ${temp[0]}`,
-            `경도: ${temp[1]}`,
-            `고도: ${temp[2]}`,
-            `정확도: ${accuracy}m`
-          );
+          // console.log(
+          //   `위도: ${latitude}`,
+          //   `경도: ${longitude}`,
+          //   `고도: ${altitude}`,
+          //   `정확도: ${accuracy}m`
+          // );
         },
         error => console.error('위치 정보를 가져오는 중 오류 발생:', error),
         {
