@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GPS + 자이로 기반 AR 데모</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body, html {
+        margin: 0;
+        overflow: hidden;
+        height: 100%;
+        background: black;
+      }
+      video {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100vw; height: 100vh;
+        object-fit: cover;
+        z-index: 0;
+      }
+      canvas {
+        position: absolute;
+        top: 0; left: 0;
+        z-index: 1;
+      }
+      #info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        padding: 10px;
+        background: rgba(0,0,0,0.6);
+        color: white;
+        z-index: 2;
+        font-size: 14px;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <video id="cam" autoplay playsinline></video>
+    <div id="info">GPS 및 센서 초기화 중...</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+
+    <script>
+      const info = document.getElementById("info");
+      const video = document.getElementById("cam");
+      let targetLat, targetLon;
+
+      // 후면 카메라 스트리밍
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(stream => video.srcObject = stream)
+        .catch(() => info.innerText = "❌ 카메라 접근 실패");
+
+      const toRad = deg => deg * Math.PI / 180;
+      function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+        const φ1 = toRad(lat1);
+        const φ2 = toRad(lat2);
+        const a = Math.sin(dLat/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(dLon/2)**2;
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+      }
+
+      // Three.js 기본 세팅
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // 큐브 생성
+      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      const material = new THREE.MeshNormalMaterial();
+      const cube = new THREE.Mesh(geometry, material);
+      cube.position.set(0, 0, -5); // 카메라 전방 5m
+      cube.visible = true; // 항상 표시 (디버그용)
+      scene.add(cube);
+
+      // 자이로 회전 수신
+      let currentRotation = { alpha: 0, beta: 0, gamma: 0 };
+      window.addEventListener("deviceorientation", (e) => {
+        currentRotation = {
+          alpha: e.alpha || 0,
+          beta: e.beta || 0,
+          gamma: e.gamma || 0
+        };
+      });
+
+      // 자이로 회전을 카메라에 반영
+      function updateCameraRotation() {
+        const { alpha, beta, gamma } = currentRotation;
+        const euler = new THREE.Euler(
+          toRad(beta - 90), // pitch
+          toRad(gamma),     // yaw
+          toRad(alpha),     // roll
+          "YXZ"
+        );
+        camera.setRotationFromEuler(euler);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        updateCameraRotation();
+        cube.rotation.y += 0.01;
+        cube.rotation.x += 0.01;
+        renderer.render(scene, camera);
+      }
+
+      // GPS 기반 목표 지점 생성 (현재 위치에서 약 2m 떨어진 곳)
+      navigator.geolocation.getCurrentPosition(pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const offsetLat = 0.000018; // 약 2m
+        const offsetLon = 0.000018;
+        targetLat = lat + offsetLat;
+        targetLon = lon + offsetLon;
+
+        info.innerText = "📍 목표 지점 생성 완료. 큐브가 항상 보이도록 설정됨";
+        cube.visible = true;
+      }, () => {
+        info.innerText = "❌ 위치 권한이 필요합니다.";
+      });
+
+      animate();
+    </script>
+  </body>
+</html>
