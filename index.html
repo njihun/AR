@@ -2,9 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>Geo-AR: 요(자이로)만 반영</title>
+  <title>Geo-AR: 나침반 헤딩만 반영</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- A-Frame + AR.js -->
+
+  <!-- A-Frame & AR.js -->
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.js"></script>
   <!-- Geo-AR 컴포넌트 -->
@@ -12,53 +13,73 @@
   <script src="https://unpkg.com/aframe-gps-entity-place-component/dist/aframe-gps-entity-place-component.min.js"></script>
 
   <style>
-    body, html { margin:0; overflow:hidden; height:100%; }
+    body, html { margin: 0; overflow: hidden; height: 100%; }
   </style>
 </head>
 <body>
   <a-scene
     embedded
-    vr-mode-ui="enabled:false"
-    renderer="logarithmicDepthBuffer:true"
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true"
     arjs="sourceType: webcam; trackingMethod: gps; debugUIEnabled: false;"
   >
-    <!-- GPS + 나침반(요)만 반영 카메라 -->
+    <!-- GPS + 나침반 헤딩만 반영 카메라 -->
     <a-entity gps-camera compass-reader></a-entity>
   </a-scene>
 
   <script>
-    // 1) alpha(0~360)만 읽어서 카메라 Y축(수평 회전)에 적용
+    // 1) compass-reader 컴포넌트: 오직 alpha(헤딩)만 반영
     AFRAME.registerComponent('compass-reader', {
       init: function () {
-        window.addEventListener('deviceorientation', this.onOrientation.bind(this));
+        // Android 13+ 등 절대 방향 지원이 있으면 우선 사용
+        const evtName = ('ondeviceorientationabsolute' in window)
+          ? 'deviceorientationabsolute'
+          : 'deviceorientation';
+        window.addEventListener(evtName, this.onOrientation.bind(this), true);
       },
       onOrientation: function (evt) {
-        if (evt.alpha == null) return;
-        // Three.js world: Y축 회전에 -alpha 적용 (나침반과 맞추기)
-        this.el.object3D.rotation.y = - THREE.Math.degToRad(evt.alpha);
+        // evt.alpha: 0~360°, 북을 기준으로 시계방향 증가
+        let alpha = evt.alpha;
+        // iOS Safari 폴백: 웹킷 나침반 헤딩이 있으면 사용
+        if (alpha == null && typeof evt.webkitCompassHeading === 'number') {
+          alpha = evt.webkitCompassHeading;
+        }
+        if (alpha == null) return;
+
+        // Three.js 좌표계에 맞춰 보정:
+        // 브라우저 alpha(0° 북동·시계방향) → Y축 회전(반시계방향)
+        // 따라서 360 - alpha
+        const heading = 360 - alpha;
+        this.el.object3D.rotation.set(0, THREE.Math.degToRad(heading), 0);
       }
     });
 
-    // 2) GPS로 현재 위치 받아서, ±5m 이내 랜덤 좌표에 큐브 배치
+    // 2) GPS로 현재 위치 가져와 ±5m 이내 랜덤 좌표에 큐브 배치
     navigator.geolocation.getCurrentPosition(pos => {
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
-      const toDeg = m => m/111111;
-      const d = 5; // 미터
-      const offLat = (Math.random()-0.5)*toDeg(d);
-      const offLon = (Math.random()-0.5)*(toDeg(d)/Math.cos(lat*Math.PI/180));
-      const targetLat = lat+offLat, targetLon = lon+offLon;
 
-      // 고정 큐브 생성
+      const meterToDeg = m => m / 111111;  // 위도 1° ≈ 111.111km
+      const d = 5; // 최대 5m 오프셋
+      const offLat = (Math.random() - 0.5) * meterToDeg(d);
+      const offLon = (Math.random() - 0.5) * (meterToDeg(d) / Math.cos(lat * Math.PI/180));
+
+      const targetLat = lat + offLat;
+      const targetLon = lon + offLon;
+
+      // 고정 큐브(A-Frame box) 생성
       const box = document.createElement('a-box');
-      box.setAttribute('gps-entity-place',
-        `latitude: ${targetLat}; longitude: ${targetLon};`
+      box.setAttribute('gps-entity-place', 
+        `latitude: ${targetLat.toFixed(6)}; longitude: ${targetLon.toFixed(6)};`
       );
-      box.setAttribute('scale','3 3 3');
-      box.setAttribute('color','cyan');
-      box.setAttribute('animation','property: rotation; to: 0 360 0; loop: true; dur: 8000');
+      box.setAttribute('scale', '3 3 3');
+      box.setAttribute('color', 'cyan');
+      // 부드러운 회전 애니메이션
+      box.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 8000');
       document.querySelector('a-scene').appendChild(box);
-    }, _=> alert('위치 권한이 필요합니다'));
+    }, () => {
+      alert('위치 권한이 필요합니다');
+    });
   </script>
 </body>
 </html>
