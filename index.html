@@ -77,6 +77,43 @@
       // 카메라에 회전 적용
       camera.quaternion.copy(quaternion);
     });
+    let startLatitude = null;
+    let startLongitude = null;
+    let startAltitude = null;
+    if ('geolocation' in navigator) {
+      // 위치 변경을 계속 감시
+      const watchId = navigator.geolocation.watchPosition(
+        position => {
+          const { latitude, longitude, altitude, accuracy } = position.coords;
+          if (startLongitude == null) {
+            [ startLatitude, startLongitude, startAltitude ] = position.coords;
+            console.log([ startLatitude, startLongitude, startAltitude ]);
+          }
+          let temp = [latitude, longitude, altitude].map((e) => { return String(e * 10000).trunc() });
+          console.log(
+            `위도: ${temp[0]}`,
+            `경도: ${temp[1]}`,
+            `고도: ${temp[2]}`,      // 단, 브라우저/단말기 지원 시
+            `정확도: ${accuracy}m`
+          );
+          // 여기에서 three.js 오브젝트 이동 등에 활용
+        },
+        error => {
+          console.error('위치 정보를 가져오는 중 오류 발생:', error);
+        },
+        {
+          enableHighAccuracy: true,  // GPS 사용 우선
+          maximumAge: 1000,          // 1초 전 위치 데이터까지 허용
+          timeout: 5000              // 5초 이내에 응답 없으면 error 콜백
+        }
+      );
+
+      // 나중에 감시를 멈추고 싶다면:
+      // navigator.geolocation.clearWatch(watchId);
+    } else {
+      console.warn('이 브라우저는 Geolocation API를 지원하지 않습니다.');
+    }
+
 
     // 7) 렌더 루프
     function animate() {
