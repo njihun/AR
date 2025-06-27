@@ -1,115 +1,122 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>웹 AR : 고정된 큐브</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GPS & Gyro AR Cube</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body, html { margin: 0; padding: 0; overflow: hidden; }
     #info {
-      position: absolute; top: 10px; left: 10px; 
-      background: rgba(255,255,255,0.7); padding: 8px;
-      font-family: sans-serif; font-size: 14px;
+      position: absolute; top: 10px; left: 10px;
+      color: #fff; font-family: sans-serif;
+      background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 4px;
     }
   </style>
 </head>
 <body>
-  <div id="info">위치·자세 센서 사용을 허용해주세요</div>
-
+  <div id="info">허가 요청 중...</div>
   <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.151.3/build/three.module.js';
-    import { DeviceOrientationControls } from 'https://cdn.jsdelivr.net/npm/three-stdlib@2.22.3/controls/DeviceOrientationControls.js';
+    import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
+    import { DeviceOrientationControls } from 'https://unpkg.com/three@0.159.0/examples/jsm/controls/DeviceOrientationControls.js';
 
-    // 1) 고정하고 싶은 실제 세계 위도·경도 (예시: 서울시청)
-    const targetLat = 37.5665;
-    const targetLon = 126.9780;
-
-    // 사용자 현재 위치
-    let userLat = 0, userLon = 0;
-
-    // Three.js 기본 세팅
+    //——— 1) 기본 세팅 ———
     const scene    = new THREE.Scene();
-    const camera   = new THREE.PerspectiveCamera( 60, window.innerWidth/window.innerHeight, 0.1, 10000 );
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setSize( window.innerWidth, window.innerHeight );
-    document.body.appendChild( renderer.domElement );
+    const camera   = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
 
-    // 안내 문구
-    const info = document.getElementById('info');
-
-    // 큐브 생성
-    const geo  = new THREE.BoxGeometry( 1, 1, 1 );
-    const mat  = new THREE.MeshNormalMaterial();
-    const cube = new THREE.Mesh( geo, mat );
-    scene.add( cube );
-
-    // DeviceOrientationControls (카메라를 폰 자세에 맞춤)
-    const controls = new DeviceOrientationControls( camera );
-    controls.connect();
-
-    // 초기 카메라 위치: 사용자 위치(0,0,0)
-    camera.position.set( 0, 0, 0 );
-
-    // GPS 업데이트
-    if ( 'geolocation' in navigator ) {
-      navigator.geolocation.watchPosition( pos => {
-        userLat = pos.coords.latitude;
-        userLon = pos.coords.longitude;
-        updateCubePosition();
-        info.style.display = 'none';
-      }, err => {
-        info.textContent = '위치 정보를 가져올 수 없습니다.';
-        console.error(err);
-      }, { enableHighAccuracy: true, maximumAge:1000, timeout:5000 } );
-    } else {
-      info.textContent = '이 브라우저는 Geolocation을 지원하지 않습니다.';
-    }
-
-    // 위도·경도 차이를 미터 단위 XYZ로 변환
-    function computeOffset() {
-      const R = 6378137; // 지구 반지름 (m)
-      const dLat = THREE.MathUtils.degToRad( targetLat - userLat );
-      const dLon = THREE.MathUtils.degToRad( targetLon - userLon );
-      const latRad = THREE.MathUtils.degToRad( userLat );
-
-      // 동서(X), 남북(Z) 축 변환
-      const x = R * dLon * Math.cos( latRad );
-      const z = -R * dLat;
-      return { x, z };
-    }
-
-    // 큐브 위치 갱신
-    function updateCubePosition() {
-      const { x, z } = computeOffset();
-      cube.position.set( x, 0, z );
-    }
-
-    // 리사이즈 대응
-    window.addEventListener( 'resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize( window.innerWidth, window.innerHeight );
+      renderer.setSize(innerWidth, innerHeight);
     });
 
-    // 애니메이션 루프
+    //——— 2) 센서 컨트롤 ———
+    const controls = new DeviceOrientationControls(camera);
+
+    async function initSensors() {
+      // iOS 13+ 처리
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res === 'granted') {
+            window.addEventListener('deviceorientation', () => controls.update());
+            info.textContent = '디바이스 방향 권한 허용됨';
+          } else {
+            info.textContent = '디바이스 방향 권한 거부됨';
+          }
+        } catch (e) {
+          console.error(e);
+          info.textContent = '디바이스 방향 권한 요청 실패';
+        }
+      } else {
+        window.addEventListener('deviceorientation', () => controls.update());
+        info.textContent = '디바이스 방향 사용 중';
+      }
+    }
+
+    //——— 3) 좌표 변환 함수 ———
+    const R = 6378137; // 지구 반지름(m)
+    const DEG2RAD = Math.PI/180;
+    function latLonToENU(lat, lon, lat0, lon0) {
+      const dLat = (lat - lat0) * DEG2RAD;
+      const dLon = (lon - lon0) * DEG2RAD;
+      const x = dLon * Math.cos(lat0 * DEG2RAD) * R;      // 동
+      const z = dLat * R;                                 // 북
+      return new THREE.Vector3(x, 0, -z);                 // -z로 뒤쪽
+    }
+
+    //——— 4) 기준점 & 대상점 ———
+    let origin = { lat: 0, lon: 0 };
+    // 여기에 띄우고 싶은 실제 위치(lat, lon)를 설정하세요.
+    const target = { lat: 37.5665, lon: 126.9780 }; // 예: 서울시청
+
+    //——— 5) 큐브 생성 ———
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 2, 2),
+      new THREE.MeshNormalMaterial({ opacity: 0.8, transparent: true })
+    );
+    scene.add(cube);
+
+    //——— 6) GPS 권한 요청 & 업데이트 ———
+    const info = document.getElementById('info');
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        origin.lat = pos.coords.latitude;
+        origin.lon = pos.coords.longitude;
+        updateCamera(pos.coords);
+        updateCube();
+        initSensors();
+      }, err => {
+        console.error(err);
+        info.textContent = 'GPS 권한 거부됨';
+      }, { enableHighAccuracy: true });
+
+      navigator.geolocation.watchPosition(pos => {
+        updateCamera(pos.coords);
+      }, err => console.warn(err), { enableHighAccuracy: true, maximumAge: 1000 });
+    } else {
+      info.textContent = '이 브라우저는 GPS를 지원하지 않습니다.';
+    }
+
+    function updateCamera({ latitude, longitude }) {
+      const camPos = latLonToENU(latitude, longitude, origin.lat, origin.lon);
+      camera.position.copy(camPos);
+    }
+
+    function updateCube() {
+      const cubePos = latLonToENU(target.lat, target.lon, origin.lat, origin.lon);
+      cube.position.copy(cubePos);
+    }
+
+    //——— 7) 렌더 루프 ———
     function animate() {
-      requestAnimationFrame( animate );
+      requestAnimationFrame(animate);
       controls.update();
-      renderer.render( scene, camera );
+      renderer.render(scene, camera);
     }
     animate();
-
-    // iOS 권한 요청 (iOS13+)
-    window.addEventListener('click', () => {
-      if ( typeof DeviceOrientationEvent !== 'undefined'
-           && typeof DeviceOrientationEvent.requestPermission === 'function' ) {
-        DeviceOrientationEvent.requestPermission()
-          .then( res => {
-            if ( res === 'granted' ) controls.connect();
-          })
-          .catch( console.error );
-      }
-    }, { once: true });
   </script>
 </body>
 </html>
