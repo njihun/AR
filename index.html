@@ -1,122 +1,98 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>GPS & Gyro AR Cube</title>
+  <meta charset="UTF-8">
+  <title>Three.js Gyroscope Camera</title>
   <style>
-    body, html { margin: 0; padding: 0; overflow: hidden; }
-    #info {
-      position: absolute; top: 10px; left: 10px;
-      color: #fff; font-family: sans-serif;
-      background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 4px;
+    body { margin: 0; overflow: hidden; }
+    #startButton {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      z-index: 1;
     }
   </style>
 </head>
 <body>
-  <div id="info">허가 요청 중...</div>
+  <!-- iOS 모션 권한 요청용 버튼 -->
+  <button id="startButton">모션 허용</button>
+
   <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
-    import { DeviceOrientationControls } from 'https://unpkg.com/three@0.159.0/examples/jsm/controls/DeviceOrientationControls.js';
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js';
+    import { DeviceOrientationControls } from 'https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/controls/DeviceOrientationControls.js';
 
-    //——— 1) 기본 세팅 ———
-    const scene    = new THREE.Scene();
-    const camera   = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(innerWidth, innerHeight);
-    document.body.appendChild(renderer.domElement);
+    let camera, scene, renderer, controls;
 
-    window.addEventListener('resize', () => {
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-    });
+    init();
+    animate();
 
-    //——— 2) 센서 컨트롤 ———
-    const controls = new DeviceOrientationControls(camera);
+    function init() {
+      // 씬 & 카메라 설정
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 0, 0);
 
-    async function initSensors() {
-      // iOS 13+ 처리
-      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-          const res = await DeviceOrientationEvent.requestPermission();
-          if (res === 'granted') {
-            window.addEventListener('deviceorientation', () => controls.update());
-            info.textContent = '디바이스 방향 권한 허용됨';
-          } else {
-            info.textContent = '디바이스 방향 권한 거부됨';
-          }
-        } catch (e) {
-          console.error(e);
-          info.textContent = '디바이스 방향 권한 요청 실패';
-        }
-      } else {
-        window.addEventListener('deviceorientation', () => controls.update());
-        info.textContent = '디바이스 방향 사용 중';
-      }
+      // 렌더러 설정
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // 예시용 메시(정육면체) 추가
+      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      const material = new THREE.MeshNormalMaterial();
+      const cube = new THREE.Mesh(geometry, material);
+      cube.position.set(0, 0, -5);
+      scene.add(cube);
+
+      // DeviceOrientationControls 생성 (초기에는 disabled 상태)
+      controls = new DeviceOrientationControls(camera);
+      controls.enabled = false;
+
+      // 화면 리사이즈 대응
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
     }
 
-    //——— 3) 좌표 변환 함수 ———
-    const R = 6378137; // 지구 반지름(m)
-    const DEG2RAD = Math.PI/180;
-    function latLonToENU(lat, lon, lat0, lon0) {
-      const dLat = (lat - lat0) * DEG2RAD;
-      const dLon = (lon - lon0) * DEG2RAD;
-      const x = dLon * Math.cos(lat0 * DEG2RAD) * R;      // 동
-      const z = dLat * R;                                 // 북
-      return new THREE.Vector3(x, 0, -z);                 // -z로 뒤쪽
-    }
-
-    //——— 4) 기준점 & 대상점 ———
-    let origin = { lat: 0, lon: 0 };
-    // 여기에 띄우고 싶은 실제 위치(lat, lon)를 설정하세요.
-    const target = { lat: 37.5665, lon: 126.9780 }; // 예: 서울시청
-
-    //——— 5) 큐브 생성 ———
-    const cube = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 2, 2),
-      new THREE.MeshNormalMaterial({ opacity: 0.8, transparent: true })
-    );
-    scene.add(cube);
-
-    //——— 6) GPS 권한 요청 & 업데이트 ———
-    const info = document.getElementById('info');
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(pos => {
-        origin.lat = pos.coords.latitude;
-        origin.lon = pos.coords.longitude;
-        updateCamera(pos.coords);
-        updateCube();
-        initSensors();
-      }, err => {
-        console.error(err);
-        info.textContent = 'GPS 권한 거부됨';
-      }, { enableHighAccuracy: true });
-
-      navigator.geolocation.watchPosition(pos => {
-        updateCamera(pos.coords);
-      }, err => console.warn(err), { enableHighAccuracy: true, maximumAge: 1000 });
-    } else {
-      info.textContent = '이 브라우저는 GPS를 지원하지 않습니다.';
-    }
-
-    function updateCamera({ latitude, longitude }) {
-      const camPos = latLonToENU(latitude, longitude, origin.lat, origin.lon);
-      camera.position.copy(camPos);
-    }
-
-    function updateCube() {
-      const cubePos = latLonToENU(target.lat, target.lon, origin.lat, origin.lon);
-      cube.position.copy(cubePos);
-    }
-
-    //——— 7) 렌더 루프 ———
     function animate() {
       requestAnimationFrame(animate);
+      // 모션 센서 값이 들어오면 카메라 회전 업데이트
       controls.update();
       renderer.render(scene, camera);
     }
-    animate();
+
+    // iOS 13+ 권한 요청 및 controls 활성화
+    const startButton = document.getElementById('startButton');
+    startButton.addEventListener('click', async () => {
+      // iOS 13+인지 확인
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+
+        try {
+          const response = await DeviceOrientationEvent.requestPermission();
+          if (response === 'granted') {
+            controls.connect();
+            controls.enabled = true;
+            startButton.style.display = 'none';
+          } else {
+            alert('모션 데이터 권한이 필요합니다.');
+          }
+        } catch (e) {
+          console.error(e);
+          alert('모션 권한 요청 중 오류가 발생했습니다.');
+        }
+
+      } else {
+        // iOS 이전/Android 등: 바로 활성화
+        controls.connect();
+        controls.enabled = true;
+        startButton.style.display = 'none';
+      }
+    });
   </script>
 </body>
 </html>
