@@ -1,78 +1,76 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8"/>
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Three.js + DeviceOrientation</title>
+  <title>Three.js First-Person View</title>
   <style>
     body { margin: 0; overflow: hidden; }
     canvas { display: block; }
   </style>
 </head>
 <body>
-  <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
-
-    // --- Scene / Camera / Renderer 세팅 ---
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+  <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+  <script>
+    // 1) 씬(Scene)과 카메라(PerspectiveCamera) 생성
+    const scene    = new THREE.Scene();
+    const camera   = new THREE.PerspectiveCamera(
+      75,                                   // FOV
+      window.innerWidth / window.innerHeight,
+      0.1,                                  // near
+      1000                                  // far
+    );
+    // 1인칭 시점 높이(눈 높이) 설정
     camera.position.set(0, 1.6, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(innerWidth, innerHeight);
+    // 2) 렌더러 생성 및 DOM에 붙이기
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // --- 앞에 큐브 추가 ---
-    const boxGeo = new THREE.BoxGeometry(1,1,1);
-    const boxMat = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-    const cube   = new THREE.Mesh(boxGeo, boxMat);
-    cube.position.set(0,1.6,-3);
+    // 3) 앞쪽에 보일 큐브 만들기
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+    const cube     = new THREE.Mesh(geometry, material);
+    // 카메라가 (0,1.6,0)에 있으니, 같은 높이(y=1.6)에 z=-5 떨어진 위치
+    cube.position.set(0, 1.6, -5);
     scene.add(cube);
 
-    scene.add(new THREE.DirectionalLight(0xffffff, 0.8).setPosition(5,10,7.5));
-    scene.add(new THREE.AmbientLight(0x404040));
+    // 4) 조명 추가
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(5, 10, 7.5);
+    scene.add(dirLight);
+    scene.add(new THREE.AmbientLight(0x404040)); // 전체 약한 조명
 
-    // --- DeviceOrientation → Quaternion 변환 유틸 ---
-    const zee   = new THREE.Vector3(0, 0, 1);
-    const euler = new THREE.Euler();
-    const q0    = new THREE.Quaternion(); // 보정용
-    const q1    = new THREE.Quaternion(- Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+    // 5) 리사이즈 대응
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
 
-    function setObjectQuaternion(quat, alpha, beta, gamma, orient) {
-      // Euler 순서 'YXZ'는 기기 회전에 맞춘 조합
-      euler.set(beta, alpha, -gamma, 'YXZ');
-      quat.setFromEuler(euler);
-      quat.multiply(q1); // 카메라 방향 보정
-      quat.multiply(q0.setFromAxisAngle(zee, -orient));
+    // DeviceOrientation 이벤트
+    window.addEventListener('deviceorientation', deviceorientationHandler);
+
+    // 자이로 센서 값 변화
+    function deviceorientationHandler(event) {
+      // X축
+      const beta = event.beta;
+      // Y축
+      const gamma = event.gamma;
+      // Z축
+      const alpha = event.alpha;
+      console.log(beta, gamma, alpha);
+      
     }
 
-    // --- 센서 이벤트 리스너 등록 ---
-    let screenOrient = window.orientation || 0;
-    window.addEventListener('orientationchange', () => {
-      screenOrient = window.orientation || 0;
-    });
-
-    window.addEventListener('deviceorientation', event => {
-      const alpha = THREE.MathUtils.degToRad(event.alpha  || 0);
-      const beta  = THREE.MathUtils.degToRad(event.beta   || 0);
-      const gamma = THREE.MathUtils.degToRad(event.gamma  || 0);
-      const orient= THREE.MathUtils.degToRad(screenOrient);
-
-      setObjectQuaternion(camera.quaternion, alpha, beta, gamma, orient);
-    });
-
-    // --- 렌더 루프 ---
-    window.addEventListener('resize', () => {
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-    });
-
-    (function animate(){
+    // 6) 렌더 루프
+    function animate() {
       requestAnimationFrame(animate);
+      // (필요 시) 카메라 이동/회전 로직 추가 가능
       renderer.render(scene, camera);
-    })();
-
+    }
+    animate();
   </script>
 </body>
 </html>
