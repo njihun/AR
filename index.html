@@ -63,11 +63,11 @@
       // 위도 오프셋: [-5m, +5m]
       const offLat = (Math.random() - 0.5) * toDeg(d);
       // 경도 오프셋: [-5m, +5m] (위도에 따라 cos 보정)
-      const offLon = (Math.random() - 0.5) * (toDeg(d));
+      const offLon = (Math.random() - 0.5) * (toDeg(d) / Math.cos(lat * Math.PI/180));
 
       // 목표 좌표 = 현재좌표 + 오프셋
       const targetLat = lat + offLat;
-      const targetLon = lon + offLon;
+      const targetLon = lon;
 
       // A-Frame 박스(a-box) 엔티티 생성
       const box = document.createElement('a-box');
