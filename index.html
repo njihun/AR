@@ -91,7 +91,7 @@
             startAltitude = altitude;
             console.log([ startLatitude, startLongitude, startAltitude ])
           }
-          let temp = [latitude, longitude, altitude].map((e) => { return (e * 10000).trunc() });
+          let temp = [latitude, longitude, altitude].map((e) => { return Math.trunc(e * 10000000000) });
           console.log(
             `위도: ${temp[0]}`,
             `경도: ${temp[1]}`,
